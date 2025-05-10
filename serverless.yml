@@ -1,0 +1,127 @@
+service: starwars-api
+
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-2
+  tracing:
+    lambda: true
+    apiGateway: true
+  vpc:
+    securityGroupIds:
+      - sg-XXXXXXXXXXX
+    subnetIds:
+      - subnet-XXXXXXXXXXX # us-east-2a
+      - subnet-YYYYYYYYYYY # us-east-2b
+  environment:
+    QUERY_PARAM_SIGNATURE_SECRET: ${env:QUERY_PARAM_SIGNATURE_SECRET}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:DescribeTable
+          Resource:
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/st-test
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/cu-test
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/st-test/index/character-index
+            - arn:aws:dynamodb:${aws:region}:${aws:accountId}:table/st-test/index/sorted-list-index
+        - Effect: Allow
+          Action:
+            - xray:PutTraceSegments
+            - xray:GetSamplingRules
+            - xray:GetSamplingTargets
+          Resource: "*"
+
+functions:
+  fusionados:
+    handler: src/handlers/fusionados.handler
+    timeout: 15
+    memorySize: 128
+    events:
+      - http:
+          path: fusionados
+          method: get
+    environment:
+      WEATHER_API_KEY: ${env:WEATHER_API_KEY}
+      REDIS_HOST_URL: ${env:REDIS_HOST_URL}
+  historial:
+    handler: src/handlers/historial.handler
+    timeout: 10
+    memorySize: 128
+    events:
+      - http:
+          path: historial
+          method: get
+  almacenar:
+    handler: src/handlers/almacenar.handler
+    timeout: 10
+    memorySize: 128
+    events:
+      - http:
+          path: almacenar
+          method: post
+
+resources:
+  Resources:
+    StarwarsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: st-test
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+          - AttributeName: characterId
+            AttributeType: S
+          - AttributeName: defaultQueryId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: createdAt
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: character-index
+            KeySchema:
+              - AttributeName: characterId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: sorted-list-index
+            KeySchema:
+              - AttributeName: defaultQueryId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+    CustomInfoTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: cu-test
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+
+plugins:
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 3000
